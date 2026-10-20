@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from finvizfinance.quote import finvizfinance
 
-st.set_page_config(page_title="Informe Híbrido Definitivo", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Informe Híbrido Definitivo Pro", page_icon="📈", layout="centered")
 
 def calificar(pct):
     if pct >= 75: return "🟢 Excelente"
@@ -13,7 +13,6 @@ def calificar(pct):
     elif pct >= 30: return "🟠 Precaución"
     else: return "🔴 Riesgoso"
 
-# Función auxiliar para convertir valores de Finviz a números limpios
 def parse_finviz_val(val_str):
     if not val_str or val_str == '-' or val_str == 'N/A':
         return None
@@ -24,7 +23,7 @@ def parse_finviz_val(val_str):
         return None
 
 st.title("📈 Informe Híbrido Definitivo")
-st.markdown("**15 Indicadores Técnicos + 20 Ratios (Finviz) + Evaluación y Gestión de Riesgo**")
+st.markdown("**15 Técnicos + 20 Fundamentales (Finviz) + Veredicto de Compra y Gestión de Riesgo**")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Parámetros")
@@ -45,9 +44,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
     
     with st.spinner(f"Analizando datos técnicos y de Finviz para {ticker}..."):
         try:
-            # -------------------------------------------------------------
-            # 1. OBTENCIÓN Y CÁLCULO DE DATOS TÉCNICOS (YFINANCE)
-            # -------------------------------------------------------------
+            # 1. DATOS TÉCNICOS (YFINANCE)
             activo = yf.Ticker(ticker)
             hist = activo.history(period="1y")
             
@@ -58,7 +55,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 precio = c.iloc[-1]
                 var_1m = ((precio - c.iloc[-20]) / c.iloc[-20]) * 100 if len(c) >= 20 else 0
 
-                # Cálculo de los 15 Indicadores Técnicos
+                # 15 Indicadores Técnicos
                 sma20 = c.rolling(20).mean().iloc[-1]
                 sma50 = c.rolling(50).mean().iloc[-1] if len(c) >= 50 else sma20
                 sma200 = c.rolling(200).mean().iloc[-1] if len(c) >= 200 else sma50
@@ -94,9 +91,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 donchian_high = h.rolling(20).max().iloc[-1]
                 dist_sma50 = ((precio - sma50) / sma50) * 100
 
-                # -------------------------------------------------------------
-                # 2. OBTENCIÓN DE FUNDAMENTALES DE FINVIZ
-                # -------------------------------------------------------------
+                # 2. FUNDAMENTALES DE FINVIZ
                 es_accion = False
                 fv_data = {}
                 try:
@@ -108,14 +103,13 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 except:
                     es_accion = False
 
-                # Extracción de los 20 ratios traducidos desde Finviz
                 pe_ratio = fv_data.get('P/E', 'N/D')
                 forward_pe = fv_data.get('Forward P/E', 'N/D')
                 peg_ratio = fv_data.get('PEG', 'N/D')
                 pb_ratio = fv_data.get('P/B', 'N/D')
                 ps_ratio = fv_data.get('P/S', 'N/D')
                 ev_to_ebitda = fv_data.get('EV/EBITDA', 'N/D')
-                ev_to_rev = fv_data.get('P/C', 'N/D') # Alternativa de liquidez/ventas
+                ev_to_rev = fv_data.get('P/C', 'N/D')
                 
                 roe = fv_data.get('ROE', 'N/D')
                 roa = fv_data.get('ROA', 'N/D')
@@ -134,9 +128,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 revenue_growth = fv_data.get('Sales Q/Q', 'N/D')
                 earnings_growth = fv_data.get('EPS Q/Q', 'N/D')
 
-                # -------------------------------------------------------------
-                # 3. EVALUACIÓN DE PUNTUACIONES Y FACTORES CLAVE
-                # -------------------------------------------------------------
+                # 3. PUNTUACIONES Y RAZONES
                 score_tech_raw = 0
                 razones_tecnicas = []
                 
@@ -169,7 +161,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                         puntos_fund += 1; razones_fundamentales.append(f"Alta rentabilidad para el accionista (ROE > 15%)")
                     if cr_val and cr_val > 1.2:
                         puntos_fund += 1; razones_fundamentales.append(f"Buena liquidez a corto plazo (Current Ratio > 1.2)")
-                    if de_val and de_val < 1.0: # En Finviz 1.0 = 100%
+                    if de_val and de_val < 1.0:
                         puntos_fund += 1; razones_fundamentales.append(f"Estructura de deuda saludable (Debt/Eq < 1.0)")
                     if pm_val and pm_val > 10:
                         puntos_fund += 1; razones_fundamentales.append(f"Márgenes netos sólidos (> 10%)")
@@ -180,9 +172,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 score_global_pct = (score_tech_pct * 0.5) + (score_fund_pct * 0.5)
 
-                # -------------------------------------------------------------
-                # 4. PRESENTACIÓN DE RESULTADOS EN LA APP MÓVIL
-                # -------------------------------------------------------------
+                # 4. INTERFAZ VISUAL
                 st.subheader(f"INFORME DEFINITIVO: {nombre_o_ticker.upper()} ({ticker})")
                 
                 col1, col2 = st.columns(2)
@@ -196,7 +186,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 st.line_chart(c.tail(120))
 
-                # --- PESTAÑA 1: 15 TÉCNICOS DETALLADOS ---
+                # EXPANDERS DE DATOS
                 with st.expander("🔍 Ver los 15 Indicadores Técnicos Detallados"):
                     st.write(f"1. **RSI (14):** {rsi:.1f} {'(Sobrecompra)' if rsi>70 else ('(Sobreventa)' if rsi<30 else '(Saludable)')}")
                     st.write(f"2. **SMA Corto (20):** ${sma20:,.2f} {'(Alcista)' if precio>sma20 else '(Bajista)'}")
@@ -214,7 +204,6 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     st.write(f"14. **Canal Donchian Máx (Resistencia):** ${donchian_high:,.2f}")
                     st.write(f"15. **Posición vs SMA 50:** {dist_sma50:+.2f}%")
 
-                # --- PESTAÑA 2: 20 RATIOS FUNDAMENTALES (FINVIZ) ---
                 with st.expander("📊 Ver los 20 Ratios Fundamentales (Finviz)"):
                     if es_accion:
                         st.write(f"1. **PER (Trailing P/E):** {pe_ratio}")
@@ -240,7 +229,6 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     else:
                         st.info("ℹ️ Activo no accionario: Ratios fundamentales omitidos (Criptomoneda / Índice / Materia Prima).")
 
-                # --- PESTAÑA 3: FACTORES CLAVE DETECTADOS ---
                 with st.expander("🔍 Factores Clave Detectados"):
                     st.markdown("**Técnicos:**")
                     for r in razones_tecnicas:
@@ -249,16 +237,9 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     for r in razones_fundamentales:
                         st.write(f"• [Fundamental] {r}")
 
-                # --- PESTAÑA 4: RECOMENDACIÓN Y GESTIÓN DE RIESGO ---
-                st.subheader("🛡️ Recomendación y Plan Operativo")
+                # --- VEREDICTO DE COMPRA INTELIGENTE Y GESTIÓN DE RIESGO ---
+                st.subheader("🎯 Veredicto de Compra y Plan Operativo")
                 
-                if score_global_pct >= 70:
-                    st.success("🟢 **RECOMENDACIÓN: COMPRA FUERTE (ALTA CONFLUENCIA HÍBRIDA)**\n\n• El activo demuestra solidez fundamental y un momento técnico alcista muy favorable.")
-                elif score_global_pct >= 45:
-                    st.warning("🟡 **RECOMENDACIÓN: MANTENER / ESPERA NEUTRAL**\n\n• Señales mixtas en el mercado. Conviene vigilar soportes o esperar confirmación.")
-                else:
-                    st.error("🔴 **RECOMENDACIÓN: PRECAUCIÓN / ZONA DE RIESGO**\n\n• Debilidad técnica o valoración exigente. Se aconseja prudencia.")
-
                 stop_loss = precio - (1.5 * atr)
                 take_profit = precio + (2.5 * atr)
                 riesgo = precio - stop_loss
@@ -269,14 +250,41 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 unidades_a_comprar = capital_a_riesgo / riesgo if riesgo > 0 else 0
                 inversion_total = unidades_a_comprar * precio
 
+                # Lógica de Timing
+                if score_global_pct >= 65 and rsi <= 70 and ratio_rb >= 1.5:
+                    veredicto_titulo = "🟢 SÍ: BUEN MOMENTO PARA COMPRAR"
+                    veredicto_color = "success"
+                    explicacion_veredicto = "El activo tiene alta calidad global, el RSI no está en zona extrema de sobrecompra y el ratio de riesgo/beneficio es favorable."
+                elif score_global_pct >= 50 and rsi < 40:
+                    veredicto_titulo = "🟡 ESPERAR / COMPRA EN SOPORTE"
+                    veredicto_color = "warning"
+                    explicacion_veredicto = "El activo es interesante, pero está en zona de sobreventa o toque de soporte. Conviene vigilar si rebota antes de entrar."
+                elif rsi > 75:
+                    veredicto_titulo = "🟠 PRECAUCIÓN: SOBRECOMPRADO (NO COMPRAR AÚN)"
+                    veredicto_color = "warning"
+                    explicacion_veredicto = "Aunque el activo pueda ser bueno, el RSI está demasiado alto (>75). Hay alto riesgo de corrección a corto plazo."
+                else:
+                    veredicto_titulo = "🔴 NO COMPRAR: ZONA DE RIESGO"
+                    veredicto_color = "error"
+                    explicacion_veredicto = "Las señales técnicas y/o fundamentales no acompañan. Las probabilidades juegan en contra."
+
+                if veredicto_color == "success":
+                    st.success(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
+                elif veredicto_color == "warning":
+                    st.warning(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
+                else:
+                    st.error(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
+
+                st.markdown("---")
+                st.markdown("### 🛡️ Plan de Posición y Riesgo")
                 st.markdown(f"""
-                * 💰 **Capital Total:** ${capital_disponible:,.2f}
-                * ⚠️ **Riesgo Máximo ({pct_riesgo_max*100}%):** ${capital_a_riesgo:,.2f}
-                * 🎯 **Precio Entrada Sugerido:** ${precio:,.2f}
-                * 🛑 **Stop Loss (Invalidación):** ${stop_loss:,.2f} (-1.5x ATR)
-                * 🏁 **Take Profit (Objetivo):** ${take_profit:,.2f} (+2.5x ATR)
-                * 📦 **Unidades a Comprar:** {unidades_a_comprar:,.2f} (Inversión: ${inversion_total:,.2f})
-                * 📐 **Ratio Riesgo / Beneficio:** 1 : {ratio_rb:.2f} {'(Excelente > 1.5)' if ratio_rb >= 1.5 else '(Precaución)'}
+                * 💰 **Capital Total Asignado:** ${capital_disponible:,.2f}
+                * ⚠️ **Riesgo Máximo Permitido ({pct_riesgo_max*100}%):** ${capital_a_riesgo:,.2f}
+                * 🎯 **Precio de Entrada Sugerido:** ${precio:,.2f}
+                * 🛑 **Stop Loss (Límite de Pérdida):** ${stop_loss:,.2f} (-1.5x ATR)
+                * 🏁 **Take Profit (Objetivo de Ganancia):** ${take_profit:,.2f} (+2.5x ATR)
+                * 📦 **Unidades a Comprar:** **{unidades_a_comprar:,.2f}** (Inversión total: **${inversion_total:,.2f}**)
+                * 📐 **Ratio Riesgo / Beneficio:** **1 : {ratio_rb:.2f}** {'(Excelente > 1.5)' if ratio_rb >= 1.5 else '(Precaución < 1.5)'}
                 """)
 
         except Exception as e:
