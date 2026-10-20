@@ -3,7 +3,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from finvizfinance.quote import finvizfinance
-from datetime import datetime
 
 st.set_page_config(page_title="Informe Híbrido Wall Street Pro", page_icon="📈", layout="centered")
 
@@ -24,7 +23,7 @@ def parse_finviz_val(val_str):
         return None
 
 st.title("📈 Informe Híbrido Wall Street Pro")
-st.markdown("**15 Técnicos + 20 Fundamentales + Analistas + Cortos + Insiders + Veredicto Inteligente**")
+st.markdown("**15 Técnicos + 20 Fundamentales + Analistas + Cortos + Insiders + Veredicto**")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Parámetros")
@@ -92,31 +91,14 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 donchian_high = h.rolling(20).max().iloc[-1]
                 dist_sma50 = ((precio - sma50) / sma50) * 100
 
-                # 2. FUNDAMENTALES Y DATOS AVANZADOS DE FINVIZ Y YFINANCE
+                # 2. FUNDAMENTALES Y DATOS DE FINVIZ (ROBUSTO)
                 es_accion = False
                 fv_data = {}
-                noticias_list = []
-                analistas_target = "N/D"
-                recomendacion_analistas = "N/D"
                 short_float = "N/D"
                 insider_trading = "N/D"
                 prox_resultados = "N/D"
-
-                try:
-                    # Datos de yfinance extra (Analistas y Calendario)
-                    info_yf = activo.info
-                    analistas_target = info_yf.get('targetMeanPrice', 'N/D')
-                    recomendacion_analistas = info_yf.get('recommendationKey', 'N/D').upper()
-                    
-                    # Noticias de yfinance
-                    noticias_raw = activo.news
-                    if noticias_raw:
-                        for n in noticias_raw[:4]: # Cogemos las 4 más recientes
-                            titulo = n.get('title', '')
-                            link = n.get('link', '#')
-                            noticias_list.append((titulo, link))
-                except:
-                    pass
+                recomendacion_analistas = "N/D"
+                analistas_target = "N/D"
 
                 try:
                     if "-" not in ticker and "=" not in ticker:
@@ -127,9 +109,20 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                             short_float = fv_data.get('Short Float', 'N/D')
                             insider_trading = fv_data.get('Insider Own', 'N/D')
                             prox_resultados = fv_data.get('Earnings', 'N/D')
+                            recomendacion_analistas = fv_data.get('Recom', 'N/D')
                 except:
                     es_accion = False
 
+                # Extracción segura desde yfinance info para analistas
+                try:
+                    info_yf = activo.info
+                    analistas_target = info_yf.get('targetMeanPrice', info_yf.get('targetHighPrice', 'N/D'))
+                    if recomendacion_analistas == 'N/D':
+                        recomendacion_analistas = info_yf.get('recommendationKey', 'N/D').upper()
+                except:
+                    pass
+
+                # Ratios Fundamentales de Finviz
                 pe_ratio = fv_data.get('P/E', 'N/D')
                 forward_pe = fv_data.get('Forward P/E', 'N/D')
                 peg_ratio = fv_data.get('PEG', 'N/D')
@@ -215,8 +208,9 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 # --- EXPANDERS DE DATOS PROFESIONALES ---
                 with st.expander("🎯 Consenso de Analistas y Cortos (Wall Street)"):
-                    st.write(f"• **Precio Objetivo Medio (Analistas):** ${analistas_target if analistas_target != 'N/D' else 'N/D'}")
-                    st.write(f"• **Recomendación General:** {recomendacion_analistas}")
+                    target_str = f"${analistas_target:,.2f}" if isinstance(analistas_target, (int, float)) else str(analistas_target)
+                    st.write(f"• **Precio Objetivo Medio (Analistas):** {target_str}")
+                    st.write(f"• **Recomendación / Valoración (Finviz Recom):** {recomendacion_analistas}")
                     st.write(f"• **Interés de Cortos (Short Float):** {short_float}")
                     st.write(f"• **Propiedad de Directivos (Insiders):** {insider_trading}")
                     st.write(f"• **Próxima Fecha de Resultados:** {prox_resultados}")
@@ -263,12 +257,10 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     else:
                         st.info("ℹ️ Activo no accionario: Ratios fundamentales omitidos.")
 
-                with st.expander("📰 Últimas Noticias y Titulares del Mercado"):
-                    if noticias_list:
-                        for tit, lnk in noticias_list:
-                            st.markdown(f"• [{tit}]({lnk})")
-                    else:
-                        st.info("No hay noticias recientes disponibles para este activo.")
+                with st.expander("📰 Enlace Directo a Noticias (Finviz)"):
+                    # Como las noticias de Yahoo cambian de formato constantemente, un enlace directo a Finviz es 100% infalible y muy limpio en móvil
+                    st.markdown(f"🔗 Puedes consultar las últimas noticias, comunicados y eventos en tiempo real para este activo en su panel oficial de Finviz:")
+                    st.markdown(f"👉 [Ver noticias y gráficos en vivo de {ticker} en Finviz](https://finviz.com/quote.ashx?t={ticker})")
 
                 # --- VEREDICTO INTELIGENTE AMPLIADO Y GESTIÓN DE RIESGO ---
                 st.subheader("🎯 Veredicto de Compra y Plan Operativo")
@@ -283,16 +275,16 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 unidades_a_comprar = capital_a_riesgo / riesgo if riesgo > 0 else 0
                 inversion_total = unidades_a_comprar * precio
 
-                # Resumen fundamental dinámico para el veredicto
+                # Resumen fundamental dinámico
                 if es_accion:
                     fwd_str = f"Su **Forward P/E** es **{forward_pe}**" if forward_pe != 'N/D' else "previsión estable"
                     deuda_str = f"su deuda sobre capital está en **{debt_to_equity}**" if debt_to_equity != 'N/D' else "estructura financiera vigilada"
-                    analistas_str = f"los analistas de Wall Street recomiendan **{recomendacion_analistas}** con un objetivo medio de **${analistas_target}**" if analistas_target != 'N/D' else "consenso de mercado en seguimiento"
-                    resumen_fundamental_texto = f" A nivel de negocio, {fwd_str}, {deuda_str} y {analistas_str}."
+                    rec_str = f"la recomendación de mercado en Finviz marca **{recomendacion_analistas}**" if recomendacion_analistas != 'N/D' else "consenso en seguimiento"
+                    resumen_fundamental_texto = f" A nivel corporativo, {fwd_str}, {deuda_str} y {rec_str}."
                 else:
                     resumen_fundamental_texto = " Al tratarse de un activo alternativo, no aplican métricas analíticas de empresas corporativas."
 
-                # Lógica de Timing con explicación ampliada
+                # Lógica de Timing
                 if score_global_pct >= 65 and rsi <= 70 and ratio_rb >= 1.5:
                     veredicto_titulo = "🟢 SÍ: BUEN MOMENTO PARA COMPRA FUERTE"
                     veredicto_color = "success"
