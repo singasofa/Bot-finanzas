@@ -3,8 +3,9 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from finvizfinance.quote import finvizfinance
+from datetime import datetime
 
-st.set_page_config(page_title="Informe Híbrido Definitivo Pro", page_icon="📈", layout="centered")
+st.set_page_config(page_title="Informe Híbrido Wall Street Pro", page_icon="📈", layout="centered")
 
 def calificar(pct):
     if pct >= 75: return "🟢 Excelente"
@@ -22,8 +23,8 @@ def parse_finviz_val(val_str):
     except:
         return None
 
-st.title("📈 Informe Híbrido Definitivo")
-st.markdown("**15 Técnicos + 20 Fundamentales (Finviz) + Veredicto de Compra y Gestión de Riesgo**")
+st.title("📈 Informe Híbrido Wall Street Pro")
+st.markdown("**15 Técnicos + 20 Fundamentales + Analistas + Cortos + Insiders + Veredicto Inteligente**")
 
 # --- BARRA LATERAL ---
 st.sidebar.header("Parámetros")
@@ -42,7 +43,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
     clave = nombre_o_ticker.strip().lower()
     ticker = diccionario_seguro.get(clave, nombre_o_ticker.upper())
     
-    with st.spinner(f"Analizando datos técnicos y de Finviz para {ticker}..."):
+    with st.spinner(f"Conectando con Wall Street y Finviz para {ticker}..."):
         try:
             # 1. DATOS TÉCNICOS (YFINANCE)
             activo = yf.Ticker(ticker)
@@ -91,15 +92,41 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 donchian_high = h.rolling(20).max().iloc[-1]
                 dist_sma50 = ((precio - sma50) / sma50) * 100
 
-                # 2. FUNDAMENTALES DE FINVIZ
+                # 2. FUNDAMENTALES Y DATOS AVANZADOS DE FINVIZ Y YFINANCE
                 es_accion = False
                 fv_data = {}
+                noticias_list = []
+                analistas_target = "N/D"
+                recomendacion_analistas = "N/D"
+                short_float = "N/D"
+                insider_trading = "N/D"
+                prox_resultados = "N/D"
+
+                try:
+                    # Datos de yfinance extra (Analistas y Calendario)
+                    info_yf = activo.info
+                    analistas_target = info_yf.get('targetMeanPrice', 'N/D')
+                    recomendacion_analistas = info_yf.get('recommendationKey', 'N/D').upper()
+                    
+                    # Noticias de yfinance
+                    noticias_raw = activo.news
+                    if noticias_raw:
+                        for n in noticias_raw[:4]: # Cogemos las 4 más recientes
+                            titulo = n.get('title', '')
+                            link = n.get('link', '#')
+                            noticias_list.append((titulo, link))
+                except:
+                    pass
+
                 try:
                     if "-" not in ticker and "=" not in ticker:
                         stock_fv = finvizfinance(ticker)
                         fv_data = stock_fv.ticker_fundament()
                         if fv_data and 'Market Cap' in fv_data:
                             es_accion = True
+                            short_float = fv_data.get('Short Float', 'N/D')
+                            insider_trading = fv_data.get('Insider Own', 'N/D')
+                            prox_resultados = fv_data.get('Earnings', 'N/D')
                 except:
                     es_accion = False
 
@@ -173,7 +200,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 score_global_pct = (score_tech_pct * 0.5) + (score_fund_pct * 0.5)
 
                 # 4. INTERFAZ VISUAL
-                st.subheader(f"INFORME DEFINITIVO: {nombre_o_ticker.upper()} ({ticker})")
+                st.subheader(f"INFORME WALL STREET: {nombre_o_ticker.upper()} ({ticker})")
                 
                 col1, col2 = st.columns(2)
                 col1.metric("Precio Actual", f"${precio:,.2f}", f"{var_1m:+.2f}% (1M)")
@@ -186,7 +213,14 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 st.line_chart(c.tail(120))
 
-                # EXPANDERS DE DATOS
+                # --- EXPANDERS DE DATOS PROFESIONALES ---
+                with st.expander("🎯 Consenso de Analistas y Cortos (Wall Street)"):
+                    st.write(f"• **Precio Objetivo Medio (Analistas):** ${analistas_target if analistas_target != 'N/D' else 'N/D'}")
+                    st.write(f"• **Recomendación General:** {recomendacion_analistas}")
+                    st.write(f"• **Interés de Cortos (Short Float):** {short_float}")
+                    st.write(f"• **Propiedad de Directivos (Insiders):** {insider_trading}")
+                    st.write(f"• **Próxima Fecha de Resultados:** {prox_resultados}")
+
                 with st.expander("🔍 Ver los 15 Indicadores Técnicos Detallados"):
                     st.write(f"1. **RSI (14):** {rsi:.1f} {'(Sobrecompra)' if rsi>70 else ('(Sobreventa)' if rsi<30 else '(Saludable)')}")
                     st.write(f"2. **SMA Corto (20):** ${sma20:,.2f} {'(Alcista)' if precio>sma20 else '(Bajista)'}")
@@ -227,17 +261,16 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                         st.write(f"19. **Crecimiento de Ingresos (Q/Q):** {revenue_growth}")
                         st.write(f"20. **Crecimiento de Beneficios (Q/Q):** {earnings_growth}")
                     else:
-                        st.info("ℹ️ Activo no accionario: Ratios fundamentales omitidos (Criptomoneda / Índice / Materia Prima).")
+                        st.info("ℹ️ Activo no accionario: Ratios fundamentales omitidos.")
 
-                with st.expander("🔍 Factores Clave Detectados"):
-                    st.markdown("**Técnicos:**")
-                    for r in razones_tecnicas:
-                        st.write(f"• [Técnico] {r}")
-                    st.markdown("**Fundamentales:**")
-                    for r in razones_fundamentales:
-                        st.write(f"• [Fundamental] {r}")
+                with st.expander("📰 Últimas Noticias y Titulares del Mercado"):
+                    if noticias_list:
+                        for tit, lnk in noticias_list:
+                            st.markdown(f"• [{tit}]({lnk})")
+                    else:
+                        st.info("No hay noticias recientes disponibles para este activo.")
 
-                # --- VEREDICTO DE COMPRA INTELIGENTE Y GESTIÓN DE RIESGO ---
+                # --- VEREDICTO INTELIGENTE AMPLIADO Y GESTIÓN DE RIESGO ---
                 st.subheader("🎯 Veredicto de Compra y Plan Operativo")
                 
                 stop_loss = precio - (1.5 * atr)
@@ -250,23 +283,32 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 unidades_a_comprar = capital_a_riesgo / riesgo if riesgo > 0 else 0
                 inversion_total = unidades_a_comprar * precio
 
-                # Lógica de Timing
+                # Resumen fundamental dinámico para el veredicto
+                if es_accion:
+                    fwd_str = f"Su **Forward P/E** es **{forward_pe}**" if forward_pe != 'N/D' else "previsión estable"
+                    deuda_str = f"su deuda sobre capital está en **{debt_to_equity}**" if debt_to_equity != 'N/D' else "estructura financiera vigilada"
+                    analistas_str = f"los analistas de Wall Street recomiendan **{recomendacion_analistas}** con un objetivo medio de **${analistas_target}**" if analistas_target != 'N/D' else "consenso de mercado en seguimiento"
+                    resumen_fundamental_texto = f" A nivel de negocio, {fwd_str}, {deuda_str} y {analistas_str}."
+                else:
+                    resumen_fundamental_texto = " Al tratarse de un activo alternativo, no aplican métricas analíticas de empresas corporativas."
+
+                # Lógica de Timing con explicación ampliada
                 if score_global_pct >= 65 and rsi <= 70 and ratio_rb >= 1.5:
-                    veredicto_titulo = "🟢 SÍ: BUEN MOMENTO PARA COMPRAR"
+                    veredicto_titulo = "🟢 SÍ: BUEN MOMENTO PARA COMPRA FUERTE"
                     veredicto_color = "success"
-                    explicacion_veredicto = "El activo tiene alta calidad global, el RSI no está en zona extrema de sobrecompra y el ratio de riesgo/beneficio es favorable."
+                    explicacion_veredicto = f"El activo cuenta con alta confluencia técnica, RSI en zona saludable ({rsi:.1f}) y un ratio riesgo/beneficio óptimo (1:{ratio_rb:.2f}).{resumen_fundamental_texto}"
                 elif score_global_pct >= 50 and rsi < 40:
                     veredicto_titulo = "🟡 ESPERAR / COMPRA EN SOPORTE"
                     veredicto_color = "warning"
-                    explicacion_veredicto = "El activo es interesante, pero está en zona de sobreventa o toque de soporte. Conviene vigilar si rebota antes de entrar."
+                    explicacion_veredicto = f"El activo tiene buenos fundamentos pero el RSI está bajo ({rsi:.1f}), cerca de soportes clave. Vigila posibles rebotes antes de entrar.{resumen_fundamental_texto}"
                 elif rsi > 75:
                     veredicto_titulo = "🟠 PRECAUCIÓN: SOBRECOMPRADO (NO COMPRAR AÚN)"
                     veredicto_color = "warning"
-                    explicacion_veredicto = "Aunque el activo pueda ser bueno, el RSI está demasiado alto (>75). Hay alto riesgo de corrección a corto plazo."
+                    explicacion_veredicto = f"El RSI está demasiado elevado ({rsi:.1f}). Existe un riesgo claro de corrección a corto plazo por sobrecompra. Conviene esperar un retroceso.{resumen_fundamental_texto}"
                 else:
                     veredicto_titulo = "🔴 NO COMPRAR: ZONA DE RIESGO"
                     veredicto_color = "error"
-                    explicacion_veredicto = "Las señales técnicas y/o fundamentales no acompañan. Las probabilidades juegan en contra."
+                    explicacion_veredicto = f"Las señales técnicas y el momento actual no acompañan de forma idónea.{resumen_fundamental_texto}"
 
                 if veredicto_color == "success":
                     st.success(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
