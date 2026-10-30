@@ -128,7 +128,6 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 if insider_trading != 'N/D' and isinstance(insider_trading, float):
                     insider_trading = f"{insider_trading*100:.2f}%"
 
-                # Extracción robusta de analistas desde info_yf
                 recomendacion_analistas = info_yf.get('recommendationKey', info_yf.get('recommendationMean', 'N/D'))
                 if isinstance(recomendacion_analistas, str) and recomendacion_analistas != 'N/D':
                     recomendacion_analistas = recomendacion_analistas.upper()
@@ -203,8 +202,14 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 st.divider()
 
-                st.write(f"📊 **Salud Técnica:** {score_tech_pct:.1f}% -> {calificar(score_tech_pct)}")
-                st.write(f"📈 **Salud Fundamental / Estructural:** {score_fund_pct:.1f}% -> {calificar(score_fund_pct)}")
+                # --- SALUD TÉCNICA Y FUNDAMENTAL CON EXPLICACIONES ---
+                col_s1, col_s2 = st.columns(2)
+                with col_s1:
+                    st.markdown(f"📊 **Salud Técnica: {score_tech_pct:.1f}%**")
+                    st.caption("Mide el momento del gráfico, medias móviles (SMA 20/50/200), fuerza de tendencia (ADX) y osciladores (RSI/MACD).")
+                with col_s2:
+                    st.markdown(f"📈 **Salud Estructural: {score_fund_pct:.1f}%**")
+                    st.caption("Evalúa la solidez y fundamentales del activo (valoración PER, diversificación en ETFs o adopción en criptos).")
 
                 st.line_chart(c.tail(120))
 
@@ -262,7 +267,6 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     raw_news = activo.news
                     if raw_news:
                         for n in raw_news:
-                            # Manejar estructura estándar o anidada en 'content' de yfinance
                             if isinstance(n, dict):
                                 title = n.get('title') or (n.get('content', {}) and n.get('content', {}).get('title'))
                                 link = n.get('link') or (n.get('content', {}) and n.get('content', {}).get('clickThroughUrl', {}).get('url'))
