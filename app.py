@@ -1,13 +1,265 @@
-# --- BUSCAR MÁXIMO DE 52 SEMANAS / HISTÓRICO ---
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
+
+try:
+    from finvizfinance.quote import finvizfinance
+    FINVIZ_DISPONIBLE = True
+except ImportError:
+    FINVIZ_DISPONIBLE = False
+
+st.set_page_config(page_title="Informe Híbrido Wall Street Pro", page_icon="📈", layout="centered")
+
+def calificar(pct):
+    if pct >= 75: return "🟢 Excelente"
+    elif pct >= 60: return "🟢 Bueno"
+    elif pct >= 45: return "🟡 Neutral"
+    elif pct >= 30: return "🟠 Precaución"
+    else: return "🔴 Riesgoso"
+
+def parse_finviz_val(val_str):
+    if not val_str or val_str == '-' or val_str == 'N/A':
+        return None
+    try:
+        clean_str = str(val_str).replace('%', '').replace(',', '').strip()
+        return float(clean_str)
+    except:
+        return None
+
+st.title("📈 Informe Híbrido Wall Street Pro")
+st.markdown("**Análisis Técnico Avanzado + Fundamentales Adaptados + Gestión de Riesgo Profesional**")
+
+# --- BARRA LATERAL ---
+st.sidebar.header("Parámetros de Búsqueda")
+nombre_o_ticker = st.sidebar.text_input("Activo (Ej: Tesla, BTC-USD, SPY, QQQ)", value="Tesla")
+capital_disponible = st.sidebar.number_input("Capital Disponible ($)", value=10000, step=500)
+pct_riesgo_max = st.sidebar.slider("Riesgo Máximo por Operación (%)", min_value=0.5, max_value=5.0, value=2.0) / 100.0
+
+if st.sidebar.button("Analizar Activo", type="primary"):
+    diccionario_seguro = {
+        "bitcoin": "BTC-USD", "ethereum": "ETH-USD", "solana": "SOL-USD", "cardano": "ADA-USD",
+        "apple": "AAPL", "tesla": "TSLA", "nvidia": "NVDA", "microsoft": "MSFT",
+        "amazon": "AMZN", "google": "GOOGL", "meta": "META", "netflix": "NFLX",
+        "oro": "GC=F", "sp500": "SPY", "bonos usa": "TLT"
+    }
+    
+    clave = nombre_o_ticker.strip().lower()
+    ticker = diccionario_seguro.get(clave, nombre_o_ticker.upper())
+    
+    with st.spinner(f"Analizando mercados globales y conectando datos para {ticker}..."):
+        try:
+            activo = yf.Ticker(ticker)
+            hist = activo.history(period="1y")
+            
+            if hist.empty or len(hist) < 60:
+                st.error(f"⚠️ No se encontraron suficientes datos históricos para '{nombre_o_ticker}'. Pruebe con el ticker exacto (ej: AAPL, SPY, BTC-USD).")
+            else:
+                c, h, l, v = hist['Close'], hist['High'], hist['Low'], hist['Volume']
+                precio = c.iloc[-1]
+                var_1m = ((precio - c.iloc[-20]) / c.iloc[-20]) * 100 if len(c) >= 20 else 0
+
+                # --- METADATOS Y TIPO DE ACTIVO ---
+                info_yf = activo.info
+                quote_type = info_yf.get('quoteType', 'EQUITY').upper()
+                
+                es_accion = (quote_type == 'EQUITY')
+                es_etf = (quote_type == 'ETF')
+                es_crypto = (quote_type == 'CRYPTOCURRENCY')
+
+                # --- INDICADORES TÉCNICOS ---
+                sma20 = c.rolling(20).mean().iloc[-1]
+                sma50 = c.rolling(50).mean().iloc[-1] if len(c) >= 50 else sma20
+                sma200 = c.rolling(200).mean().iloc[-1] if len(c) >= 200 else sma50
+                
+                ema12, ema26 = c.ewm(span=12, adjust=False).mean(), c.ewm(span=26, adjust=False).mean()
+                macd_line = ema12 - ema26
+                signal_line = macd_line.ewm(span=9, adjust=False).mean()
+                macd_actual, signal_actual = macd_line.iloc[-1], signal_line.iloc[-1]
+                
+                delta = c.diff()
+                gain = (delta.where(delta > 0, 0)).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rsi_series = 100 - (100 / (1 + (gain / loss)))
+                rsi = rsi_series.iloc[-1] if not rsi_series.empty and not pd.isna(rsi_series.iloc[-1]) else 50
+                
+                bb_mid = c.rolling(20).mean()
+                bb_std = c.rolling(20).std()
+                bb_upper = (bb_mid + (bb_std * 2)).iloc[-1]
+                bb_lower = (bb_mid - (bb_std * 2)).iloc[-1]
+                bb_middle = bb_mid.iloc[-1]
+                
+                low14, high14 = l.rolling(14).min(), h.rolling(14).max()
+                stoch_k_series = ((c - low14) / (high14 - low14) * 100)
+                stoch_k = stoch_k_series.iloc[-1] if not stoch_k_series.empty and not pd.isna(stoch_k_series.iloc[-1]) else 50
+                
+                high_low, high_close, low_close = h - l, np.abs(h - c.shift()), np.abs(l - c.shift())
+                true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+                atr = true_range.rolling(14).mean().iloc[-1]
+                
+                roc = ((c - c.shift(10)) / c.shift(10) * 100).iloc[-1]
+                vol_medio = v.rolling(20).mean().iloc[-1] if not v.empty else 1
+                vol_ratio = (v.iloc[-1] / vol_medio) if vol_medio > 0 else 1.0
+                donchian_high = h.rolling(20).max().iloc[-1]
+                dist_sma50 = ((precio - sma50) / sma50) * 100
+
+                # ADX
+                plus_dm = h.diff()
+                minus_dm = l.diff()
+                plus_dm = np.where((plus_dm > 0) & (plus_dm > minus_dm), plus_dm, 0.0)
+                minus_dm = np.where((minus_dm > 0) & (minus_dm > plus_dm), minus_dm, 0.0)
+                tr14 = true_range.rolling(14).sum()
+                plus_di = 100 * (pd.Series(plus_dm).rolling(14).sum() / tr14)
+                minus_di = 100 * (pd.Series(minus_dm).rolling(14).sum() / tr14)
+                dx = 100 * np.abs(plus_di - minus_di) / (plus_di + minus_di + 1e-9)
+                adx = dx.rolling(14).mean().iloc[-1]
+                adx = adx if not pd.isna(adx) else 25.0
+
+                # OBV
+                obv = (np.sign(c.diff()) * v).fillna(0).cumsum().iloc[-1]
+
+                # --- FUNDAMENTALES Y DATOS DE MERCADO ---
+                fv_data = {}
+                short_float = info_yf.get('shortPercentOfFloat', 'N/D')
+                if short_float != 'N/D' and isinstance(short_float, float):
+                    short_float = f"{short_float*100:.2f}%"
+                
+                insider_trading = info_yf.get('heldPercentInsiders', 'N/D')
+                if insider_trading != 'N/D' and isinstance(insider_trading, float):
+                    insider_trading = f"{insider_trading*100:.2f}%"
+
+                recomendacion_analistas = info_yf.get('recommendationKey', 'N/D').upper()
+                analistas_target = info_yf.get('targetMeanPrice', info_yf.get('targetHighPrice', 'N/D'))
+
+                if es_accion and FINVIZ_DISPONIBLE:
+                    try:
+                        if "-" not in ticker and "=" not in ticker:
+                            stock_fv = finvizfinance(ticker)
+                            fv_data = stock_fv.ticker_fundament()
+                    except:
+                        pass
+
+                pe_ratio = fv_data.get('P/E', info_yf.get('trailingPE', 'N/D'))
+                forward_pe = fv_data.get('Forward P/E', info_yf.get('forwardPE', 'N/D'))
+                peg_ratio = fv_data.get('PEG', info_yf.get('pegRatio', 'N/D'))
+                pb_ratio = fv_data.get('P/B', info_yf.get('priceToBook', 'N/D'))
+                roe = fv_data.get('ROE', 'N/D')
+                profit_margins = fv_data.get('Profit Margin', 'N/D')
+                debt_to_equity = fv_data.get('Debt/Eq', 'N/D')
+                
+                dividend_yield = fv_data.get('Dividend %', info_yf.get('dividendYield', 'N/D'))
+                if isinstance(dividend_yield, float):
+                    dividend_yield = f"{dividend_yield*100:.2f}%"
+
+                etf_expense_ratio = info_yf.get('expenseRatio', 'N/D')
+                if isinstance(etf_expense_ratio, float):
+                    etf_expense_ratio = f"{etf_expense_ratio*100:.2f}%"
+                etf_aum = info_yf.get('totalAssets', 'N/D')
+                if isinstance(etf_aum, (int, float)):
+                    etf_aum = f"${etf_aum:,.0f}"
+
+                # --- PUNTUACIONES ---
+                score_tech_raw = 0
+                if precio > sma20: score_tech_raw += 1
+                if precio > sma50: score_tech_raw += 2
+                if precio > sma200: score_tech_raw += 2
+                if macd_actual > signal_actual: score_tech_raw += 2
+                if 30 <= rsi <= 65: score_tech_raw += 2
+                if stoch_k < 80: score_tech_raw += 1
+                if roc > 0: score_tech_raw += 1
+                if adx > 25: score_tech_raw += 1
+
+                score_tech_pct = (score_tech_raw / 12) * 100
+
+                score_fund_pct = 50.0
+                if es_accion:
+                    puntos_fund = 0
+                    pe_val = parse_finviz_val(pe_ratio)
+                    if pe_val and 0 < pe_val < 30: puntos_fund += 1
+                    if rsi <= 70: puntos_fund += 1
+                    score_fund_pct = (puntos_fund / 2) * 100
+                elif es_etf:
+                    score_fund_pct = 75.0
+                elif es_crypto:
+                    score_fund_pct = 60.0
+
+                score_global_pct = (score_tech_pct * 0.6) + (score_fund_pct * 0.4)
+
+                # --- INTERFAZ VISUAL ---
+                tipo_etiqueta = "Acción" if es_accion else ("ETF" if es_etf else ("Criptomoneda" if es_crypto else "Activo Global"))
+                st.subheader(f"INFORME WALL STREET: {nombre_o_ticker.upper()} ({ticker}) — [{tipo_etiqueta}]")
+                
+                col1, col2 = st.columns(2)
+                col1.metric("Precio Actual", f"${precio:,.2f}", f"{var_1m:+.2f}% (1M)")
+                col2.metric("Índice Global", f"{score_global_pct:.1f}%", calificar(score_global_pct))
+
+                st.divider()
+
+                st.write(f"📊 **Salud Técnica:** {score_tech_pct:.1f}% -> {calificar(score_tech_pct)}")
+                st.write(f"📈 **Salud Fundamental / Estructural:** {score_fund_pct:.1f}% -> {calificar(score_fund_pct)}")
+
+                st.line_chart(c.tail(120))
+
+                # --- EXPANDERS ---
+                with st.expander("🎯 Consenso de Analistas y Datos de Mercado"):
+                    target_str = f"${analistas_target:,.2f}" if isinstance(analistas_target, (int, float)) else str(analistas_target)
+                    st.write(f"• **Precio Objetivo Medio (Analistas):** {target_str}")
+                    st.write(f"• **Recomendación de Mercado:** {recomendacion_analistas}")
+                    if es_accion:
+                        st.write(f"• **Interés de Cortos (Short Float):** {short_float}")
+                        st.write(f"• **Propiedad de Directivos (Insiders):** {insider_trading}")
+                    if es_etf:
+                        st.write(f"• **Ratio de Gastos (Expense Ratio):** {etf_expense_ratio}")
+                        st.write(f"• **Patrimonio Bajo Gestión (AUM):** {etf_aum}")
+
+                with st.expander("🔍 Ver los 17 Indicadores Técnicos Detallados"):
+                    st.write(f"1. **RSI (14):** {rsi:.1f} {'(Sobrecompra)' if rsi>70 else ('(Sobreventa)' if rsi<30 else '(Saludable)')}")
+                    st.write(f"2. **ADX (Fuerza de Tendencia):** {adx:.1f} {'(Tendencia Fuerte)' if adx>25 else '(Mercado Lateral)'}")
+                    st.write(f"3. **SMA Corto (20):** ${sma20:,.2f}")
+                    st.write(f"4. **SMA Medio (50):** ${sma50:,.2f}")
+                    st.write(f"5. **SMA Largo (200):** ${sma200:,.2f}")
+                    st.write(f"6. **MACD Line:** {macd_actual:.2f}")
+                    st.write(f"7. **MACD Señal:** {signal_actual:.2f}")
+                    st.write(f"8. **Bollinger Superior:** ${bb_upper:,.2f}")
+                    st.write(f"9. **Bollinger Media:** ${bb_middle:,.2f}")
+                    st.write(f"10. **Bollinger Inferior (Soporte):** ${bb_lower:,.2f}")
+                    st.write(f"11. **Estocástico (%K):** {stoch_k:.1f}")
+                    st.write(f"12. **ATR (Volatilidad):** ${atr:.2f}")
+                    st.write(f"13. **ROC (Momento 10d):** {roc:+.2f}%")
+                    st.write(f"14. **Ratio de Volumen:** {vol_ratio:.2f}x")
+                    st.write(f"15. **Canal Donchian Máx (Resistencia):** ${donchian_high:,.2f}")
+                    st.write(f"16. **Posición vs SMA 50:** {dist_sma50:+.2f}%")
+                    st.write(f"17. **OBV (Flujo de Volumen):** {obv:,.0f}")
+
+                with st.expander("📊 Ver Ratios Fundamentales / Estructurales"):
+                    if es_accion:
+                        st.write(f"1. **PER (Trailing P/E):** {pe_ratio}")
+                        st.write(f"2. **Forward P/E:** {forward_pe}")
+                        st.write(f"3. **PEG Ratio:** {peg_ratio}")
+                        st.write(f"4. **Price-to-Book (P/B):** {pb_ratio}")
+                        st.write(f"5. **ROE (Rentab. Capital):** {roe}")
+                        st.write(f"6. **Margen Neto:** {profit_margins}")
+                        st.write(f"7. **Deuda / Capital (D/E):** {debt_to_equity}")
+                        st.write(f"8. **Dividend Yield:** {dividend_yield}")
+                    elif es_etf:
+                        st.write(f"• **Expense Ratio:** {etf_expense_ratio}")
+                        st.write(f"• **AUM:** {etf_aum}")
+                        st.write(f"• **Dividend Yield:** {dividend_yield}")
+                    else:
+                        st.info("ℹ️ Activo alternativo / Criptomoneda: Se priorizan métricas técnicas y de momento.")
+
+                with st.expander("📰 Enlace Directo a Noticias y Análisis"):
+                    st.markdown(f"👉 [Ver gráficos en vivo y cotización de {ticker} en Finviz](https://finviz.com/quote.ashx?t={ticker})")
+
+                # --- HISTÓRICO Y MÁXIMOS DE 52 SEMANAS ---
                 max_52w = h.max() if not h.empty else precio
                 min_52w = l.min() if not l.empty else precio
                 dist_max_52w = ((precio - max_52w) / max_52w) * 100
 
-                # Obtener noticias recientes desde yfinance si están disponibles
                 noticias_recientes = activo.news if hasattr(activo, 'news') and activo.news else []
                 titulares_noticias = [n.get('title', '') for n in noticias_recientes[:5]] if noticias_recientes else []
 
-                # --- VEREDICTO INTELIGENTE AMPLIADO Y GESTIÓN DE RIESGO ---
+                # --- VEREDICTO Y PLAN DE GESTIÓN DE RIESGO ---
                 st.subheader("🎯 Veredicto de Compra, Histórico y Pronóstico")
                 
                 stop_loss = precio - (1.5 * atr)
@@ -20,23 +272,22 @@
                 unidades_a_comprar = capital_a_riesgo / riesgo if riesgo > 0 else 0
                 inversion_total = unidades_a_comprar * precio
 
-                # Lógica de Timing mejorada con contexto histórico
                 if score_global_pct >= 65 and rsi <= 70 and ratio_rb >= 1.5:
                     veredicto_titulo = "🟢 SÍ: BUEN MOMENTO PARA COMPRA FUERTE"
                     veredicto_color = "success"
-                    explicacion_veredicto = f"El activo muestra alta confluencia técnica, RSI saludable ({rsi:.1f}) y un ratio riesgo/beneficio óptimo (1:{ratio_rb:.2f}). Se encuentra a un {dist_max_52w:+.2f}% de su máximo anual (${max_52w:,.2f}), lo que indica fortaleza sin estar excesivamente estirado."
+                    explicacion_veredicto = f"El activo cuenta con alta confluencia técnica, RSI saludable ({rsi:.1f}) y ratio riesgo/beneficio óptimo (1:{ratio_rb:.2f}). Está a un {dist_max_52w:+.2f}% de su máximo anual (${max_52w:,.2f})."
                 elif score_global_pct >= 50 and rsi < 40:
                     veredicto_titulo = "🟡 ESPERAR / COMPRA EN SOPORTE"
                     veredicto_color = "warning"
-                    explicacion_veredicto = f"El activo cuenta con fundamentales sólidos pero cotiza con un RSI bajo ({rsi:.1f}), alejado de su máximo de 52 semanas (${max_52w:,.2f}). Vigila posibles rebotes en soporte antes de entrar."
+                    explicacion_veredicto = f"Estructura sólida pero con RSI bajo ({rsi:.1f}), cerca de soportes y alejado del máximo anual (${max_52w:,.2f}). Vigila rebotes."
                 elif rsi > 75:
                     veredicto_titulo = "🟠 PRECAUCIÓN: SOBRECOMPRADO (NO COMPRAR AÚN)"
                     veredicto_color = "warning"
-                    explicacion_veredicto = f"El RSI está muy elevado ({rsi:.1f}) y el precio está probando zonas cercanas a su máximo de 52 semanas (${max_52w:,.2f}). Existe riesgo de corrección a corto plazo por sobrecompra."
+                    explicacion_veredicto = f"RSI muy elevado ({rsi:.1f}) y cerca del máximo de 52 semanas (${max_52w:,.2f}). Riesgo de corrección a corto plazo."
                 else:
                     veredicto_titulo = "🔴 NO COMPRAR: ZONA DE RIESGO"
                     veredicto_color = "error"
-                    explicacion_veredicto = f"Las señales técnicas no acompañan. El precio está un {dist_max_52w:+.2f}% respecto a su máximo anual (${max_52w:,.2f}) bajo un contexto de baja confluencia."
+                    explicacion_veredicto = f"Las señales técnicas actuales no acompañan de forma idónea. Distancia al máximo anual: {dist_max_52w:+.2f}%."
 
                 if veredicto_color == "success":
                     st.success(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
@@ -45,7 +296,6 @@
                 else:
                     st.error(f"### {veredicto_titulo}\n\n{explicacion_veredicto}")
 
-                # --- ANÁLISIS DE BALANCE HISTÓRICO Y NOTICIAS ---
                 with st.expander("📈 Balance Comparativo (Meses y Años Atrás) y Máximos"):
                     st.markdown(f"""
                     * **Precio Actual:** `${precio:,.2f}`
@@ -59,17 +309,17 @@
                         st.markdown(f"* **Variación Interanual (vs 1 año atrás):** `{var_1ano:+.2f}%` (Precio hace un año: `${precio_1ano_atras:,.2f}`)")
 
                 with st.expander("📰 Pronóstico a Corto/Largo Plazo basado en Noticias Recientes"):
-                    st.markdown("**Últimos titulares detectados en el mercado (Tendencia de Noticias):**")
+                    st.markdown("**Últimos titulares detectados en el mercado:**")
                     if titulares_noticias:
                         for titular in titulares_noticias:
                             st.markdown(f"- {titular}")
                     else:
-                        st.info("No se han indexado titulares recientes de forma automática para este ticker, se recomienda revisar el enlace directo a Finviz.")
+                        st.info("No se han indexado titulares recientes de forma automática, consulta Finviz.")
                     
                     st.markdown("---")
                     st.markdown("""
-                    * **Pronóstico a Corto Plazo:** Condicionado por el flujo de volumen institucional reciente, la volatilidad (ATR) y el posicionamiento del RSI. Si el RSI está en zona neutral/saludable, el impulso se mantiene; si supera 70-75, el escenario a corto plazo apunta a consolidación o retroceso lateral.
-                    * **Pronóstico a Largo Plazo:** Depende de la estructura de medias móviles (SMA de 200 sesiones). Si el activo cotiza holgadamente por encima de la SMA de 200, la perspectiva estructural de fondo se mantiene alcista a pesar del ruido macroeconómico trimestral.
+                    * **Pronóstico a Corto Plazo:** Condicionado por el volumen institucional y el RSI. Si el RSI está en zona neutra/saludable, el impulso se mantiene; si supera 70-75, el escenario apunta a consolidación.
+                    * **Pronóstico a Largo Plazo:** Depende de la SMA de 200 sesiones. Si cotiza holgadamente por encima, la perspectiva estructural de fondo se mantiene alcista.
                     """)
 
                 st.markdown("---")
@@ -83,3 +333,6 @@
                 * 📦 **Unidades a Comprar:** **{unidades_a_comprar:,.2f}** (Inversión total: **`${inversion_total:,.2f}`**)
                 * 📐 **Ratio Riesgo / Beneficio:** **1 : {ratio_rb:.2f}** {'(Excelente > 1.5)' if ratio_rb >= 1.5 else '(Precaución < 1.5)'}
                 """)
+
+        except Exception as e:
+            st.error(f"⚠️ Hubo un error al procesar los datos: {e}")
