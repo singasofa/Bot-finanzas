@@ -60,7 +60,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 var_1m = ((precio - c.iloc[-20]) / c.iloc[-20]) * 100 if len(c) >= 20 else 0
 
                 # --- METADATOS Y TIPO DE ACTIVO ---
-                info_yf = activo.info
+                info_yf = activo.info if hasattr(activo, 'info') else {}
                 quote_type = info_yf.get('quoteType', 'EQUITY').upper()
                 
                 es_accion = (quote_type == 'EQUITY')
@@ -118,7 +118,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 # OBV
                 obv = (np.sign(c.diff()) * v).fillna(0).cumsum().iloc[-1]
 
-                # --- FUNDAMENTALES Y DATOS DE MERCADO ---
+                # --- FUNDAMENTALES Y ANALISTAS (ROBUSTO) ---
                 fv_data = {}
                 short_float = info_yf.get('shortPercentOfFloat', 'N/D')
                 if short_float != 'N/D' and isinstance(short_float, float):
@@ -128,14 +128,22 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                 if insider_trading != 'N/D' and isinstance(insider_trading, float):
                     insider_trading = f"{insider_trading*100:.2f}%"
 
-                recomendacion_analistas = info_yf.get('recommendationKey', 'N/D').upper()
-                analistas_target = info_yf.get('targetMeanPrice', info_yf.get('targetHighPrice', 'N/D'))
+                # Extracción robusta de analistas desde info_yf
+                recomendacion_analistas = info_yf.get('recommendationKey', info_yf.get('recommendationMean', 'N/D'))
+                if isinstance(recomendacion_analistas, str) and recomendacion_analistas != 'N/D':
+                    recomendacion_analistas = recomendacion_analistas.upper()
+                elif isinstance(recomendacion_analistas, (int, float)):
+                    recomendacion_analistas = f"Media: {recomendacion_analistas:.1f} (1=Buy, 5=Sell)"
+
+                analistas_target = info_yf.get('targetMeanPrice', info_yf.get('targetHighPrice', info_yf.get('targetMedianPrice', 'N/D')))
 
                 if es_accion and FINVIZ_DISPONIBLE:
                     try:
                         if "-" not in ticker and "=" not in ticker:
                             stock_fv = finvizfinance(ticker)
                             fv_data = stock_fv.ticker_fundament()
+                            if recomendacion_analistas == 'N/D':
+                                recomendacion_analistas = fv_data.get('Recom', 'N/D')
                     except:
                         pass
 
@@ -202,7 +210,7 @@ if st.sidebar.button("Analizar Activo", type="primary"):
 
                 # --- EXPANDERS ---
                 with st.expander("🎯 Consenso de Analistas y Datos de Mercado"):
-                    target_str = f"${analistas_target:,.2f}" if isinstance(analistas_target, (int, float)) else str(analistas_target)
+                    target_str = f"${analistas_target:,.2f}" if isinstance(analistas_target, (int, float)) else "No disponible para este activo"
                     st.write(f"• **Precio Objetivo Medio (Analistas):** {target_str}")
                     st.write(f"• **Recomendación de Mercado:** {recomendacion_analistas}")
                     if es_accion:
@@ -248,16 +256,25 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                     else:
                         st.info("ℹ️ Activo alternativo / Criptomoneda: Se priorizan métricas técnicas y de momento.")
 
-                with st.expander("📰 Enlace Directo a Noticias y Análisis"):
-                    st.markdown(f"👉 [Ver gráficos en vivo y cotización de {ticker} en Finviz](https://finviz.com/quote.ashx?t={ticker})")
+                # --- EXTRACCIÓN ROBUSTA DE NOTICIAS ---
+                noticias_list = []
+                try:
+                    raw_news = activo.news
+                    if raw_news:
+                        for n in raw_news:
+                            # Manejar estructura estándar o anidada en 'content' de yfinance
+                            if isinstance(n, dict):
+                                title = n.get('title') or (n.get('content', {}) and n.get('content', {}).get('title'))
+                                link = n.get('link') or (n.get('content', {}) and n.get('content', {}).get('clickThroughUrl', {}).get('url'))
+                                if title:
+                                    noticias_list.append((title, link))
+                except:
+                    pass
 
                 # --- HISTÓRICO Y MÁXIMOS DE 52 SEMANAS ---
                 max_52w = h.max() if not h.empty else precio
                 min_52w = l.min() if not l.empty else precio
                 dist_max_52w = ((precio - max_52w) / max_52w) * 100
-
-                noticias_recientes = activo.news if hasattr(activo, 'news') and activo.news else []
-                titulares_noticias = [n.get('title', '') for n in noticias_recientes[:5]] if noticias_recientes else []
 
                 # --- VEREDICTO Y PLAN DE GESTIÓN DE RIESGO ---
                 st.subheader("🎯 Veredicto de Compra, Histórico y Pronóstico")
@@ -308,13 +325,18 @@ if st.sidebar.button("Analizar Activo", type="primary"):
                         var_1ano = ((precio - precio_1ano_atras) / precio_1ano_atras) * 100
                         st.markdown(f"* **Variación Interanual (vs 1 año atrás):** `{var_1ano:+.2f}%` (Precio hace un año: `${precio_1ano_atras:,.2f}`)")
 
-                with st.expander("📰 Pronóstico a Corto/Largo Plazo basado en Noticias Recientes"):
-                    st.markdown("**Últimos titulares detectados en el mercado:**")
-                    if titulares_noticias:
-                        for titular in titulares_noticias:
-                            st.markdown(f"- {titular}")
+                with st.expander("📰 Noticias Recientes y Pronóstico (Corto y Largo Plazo)"):
+                    st.markdown("**Últimos titulares de mercado detectados:**")
+                    if noticias_list:
+                        for title, link in noticias_list[:6]:
+                            if link:
+                                st.markdown(f"- [{title}]({link})")
+                            else:
+                                st.markdown(f"- {title}")
                     else:
-                        st.info("No se han indexado titulares recientes de forma automática, consulta Finviz.")
+                        st.info("ℹ️ No hay titulares indexados en este momento para este ticker específico. Puedes consultarlos directamente en su panel oficial:")
+                    
+                    st.markdown(f"👉 [Ver noticias y gráficos en vivo de {ticker} en Finviz](https://finviz.com/quote.ashx?t={ticker})")
                     
                     st.markdown("---")
                     st.markdown("""
